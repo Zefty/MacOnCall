@@ -1,6 +1,6 @@
 # MacOnCall
 
-MacOnCall is a menu-bar-only macOS utility for keeping a Mac awake while you are on call. It uses the system-wide `pmset disablesleep` setting and asks for administrator authentication when that setting needs to change.
+MacOnCall is a menu-bar-only macOS utility for keeping a Mac awake while you are on call. It uses per-process macOS power assertions plus a clamshell override to prevent idle system and display sleep while the app is running.
 
 <table>
   <tr>
@@ -8,9 +8,6 @@ MacOnCall is a menu-bar-only macOS utility for keeping a Mac awake while you are
     <td><img src="docs/manual.png" alt="MacOnCall Manual mode" width="320"></td>
   </tr>
 </table>
-
-> [!WARNING]
-> MacOnCall does not currently install a privileged helper or daemon to watch and update the setting in the background. Each change invokes the administrator-authorized `pmset` command, so macOS may ask for your password repeatedly, particularly after its authorization cache expires or when the setting is reapplied after a power-source change.
 
 ## Status
 
@@ -24,7 +21,6 @@ This app was vibe coded and is currently untested in real-world use. In particul
 
 - macOS 14 or later
 - Xcode, to build the project
-- Administrator access, because changing `pmset disablesleep` requires authorization
 
 ## Run from Xcode
 
@@ -46,30 +42,31 @@ In Manual mode, the **Prevent Sleep** toggle directly controls sleep prevention.
 
 ## Power-source changes
 
-macOS can switch the active power profile when the Mac is plugged in or unplugged. MacOnCall observes AC/battery transitions, re-reads the live `pmset` value, and reapplies the selected mode if macOS reset the setting.
+The power assertions belong to the running MacOnCall process. MacOnCall also reapplies the clamshell override periodically because macOS can clear that state during power transitions. The app still updates its selected mode based on external-display changes.
 
 ## Safety and persistence
 
 - The selected mode and Manual toggle are saved between launches.
-- MacOnCall only turns sleep prevention off if it previously enabled it.
-- Quitting the app does not change the current power setting, avoiding an unexpected authorization prompt.
-- The setting is system-wide, so another utility or an administrator can change it outside MacOnCall.
-- If another tool owns the power setting, MacOnCall may not be able to maintain the expected behavior.
+- The assertion is released when sleep prevention is disabled or when MacOnCall quits.
+- No administrator password is required.
+- Closing the lid turns off the built-in display as required by clamshell mode; MacOnCall cannot keep that panel lit. An attached external display should remain awake while prevention is active.
+- Selecting Sleep manually or other forced-sleep events may still sleep the Mac.
 
-## Check the live setting
+> [!WARNING]
+> Clamshell support uses an undocumented IOKit power-management selector because macOS does not provide a public API for overriding lid-close sleep. It is deliberately reapplied while MacOnCall is running and may vary across macOS versions and hardware.
 
-Run this in Terminal:
+> [!WARNING]
+> This app was vibe coded and remains untested in real-world use. Do not rely on it for unattended work until you have verified its behavior on your own Mac.
+
+## Check the live assertion
+
+`SleepDisabled` is a global `pmset` setting and is not the indicator for MacOnCall's assertion. To check whether MacOnCall currently holds its assertion, run:
 
 ```sh
-pmset -g | grep -i sleepdisabled
+pmset -g assertions | grep -i -C 2 maconcall
 ```
 
-The result means:
-
-- `SleepDisabled 1`: sleep prevention is enabled.
-- `SleepDisabled 0`: normal sleep behavior is enabled.
-
-`SleepDisabled` is not shown by `pmset -g custom`.
+You should see `PreventUserIdleSystemSleep` and `PreventUserIdleDisplaySleep` assertions owned by MacOnCall while prevention is active. `pmset -g | grep -i sleepdisabled` may still report `SleepDisabled 0`, which is expected with this implementation.
 
 ## Build a release app
 

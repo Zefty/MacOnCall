@@ -1,7 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
-import IOKit.ps
+import IOKit.pwr_mgt
 
 @MainActor
 final class SleepController: ObservableObject {
@@ -31,9 +31,10 @@ final class SleepController: ObservableObject {
     @Published private(set) var lastError: String?
 
     private let defaults = UserDefaults.standard
-    private var hasEnabledSleepPrevention: Bool
+    private var systemSleepAssertionID: IOPMAssertionID?
+    private var displaySleepAssertionID: IOPMAssertionID?
     private var reconciliationScheduled = false
-    private var powerSourceRunLoopSource: CFRunLoopSource?
+    private var clamshellHeartbeat: DispatchSourceTimer?
 
     var isPreventingSleep: Bool { isSleepPreventionActive }
     var iconName: String { isPreventingSleep ? "cup.and.saucer.fill" : "moon.zzz" }
@@ -46,26 +47,23 @@ final class SleepController: ObservableObject {
         let storedMode = defaults.string(forKey: Keys.mode).flatMap(Mode.init(rawValue:)) ?? .automatic
         mode = storedMode
         manualPreventSleep = defaults.bool(forKey: Keys.manualPreventSleep)
-        hasEnabledSleepPrevention = defaults.bool(forKey: Keys.hasEnabledSleepPrevention)
-        isSleepPreventionActive = PrivilegedPowerSettings.currentSleepDisabled() ?? false
+        isSleepPreventionActive = false
 
         refreshExternalDisplayCount()
         CGDisplayRegisterReconfigurationCallback(displayReconfigurationCallback, Unmanaged.passUnretained(self).toOpaque())
-        powerSourceRunLoopSource = IOPSCreateLimitedPowerNotification(
-            powerSourceChangeCallback,
-            Unmanaged.passUnretained(self).toOpaque()
-        )?.takeRetainedValue()
-        if let powerSourceRunLoopSource {
-            CFRunLoopAddSource(CFRunLoopGetMain(), powerSourceRunLoopSource, .defaultMode)
-        }
         scheduleReconcile()
     }
 
     deinit {
         CGDisplayRemoveReconfigurationCallback(displayReconfigurationCallback, Unmanaged.passUnretained(self).toOpaque())
-        if let powerSourceRunLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), powerSourceRunLoopSource, .defaultMode)
+        if let systemSleepAssertionID {
+            IOPMAssertionRelease(systemSleepAssertionID)
         }
+        if let displaySleepAssertionID {
+            IOPMAssertionRelease(displaySleepAssertionID)
+        }
+        clamshellHeartbeat?.cancel()
+        ClamshellSleepOverride.setDisabled(false)
     }
 
     func refreshExternalDisplayCount() {
@@ -74,13 +72,6 @@ final class SleepController: ObservableObject {
         var displays = Array(repeating: CGDirectDisplayID(), count: Int(displayCount))
         CGGetOnlineDisplayList(displayCount, &displays, &displayCount)
         externalDisplayCount = displays.prefix(Int(displayCount)).filter { CGDisplayIsBuiltin($0) == 0 }.count
-        scheduleReconcile()
-    }
-
-    fileprivate func refreshPowerSetting() {
-        if let currentSetting = PrivilegedPowerSettings.currentSleepDisabled() {
-            isSleepPreventionActive = currentSetting
-        }
         scheduleReconcile()
     }
 
@@ -107,7 +98,7 @@ final class SleepController: ObservableObject {
         if shouldPreventSleep {
             guard !isSleepPreventionActive else { return }
             setSleepPrevention(true)
-        } else if hasEnabledSleepPrevention {
+        } else if isSleepPreventionActive {
             setSleepPrevention(false)
         }
     }
@@ -116,24 +107,35 @@ final class SleepController: ObservableObject {
         isChangingSetting = true
         lastError = nil
 
-        // Authorization is inherently latency-bound on a system service. Utility QoS
-        // avoids making that service inherit an interactive-priority wait.
-        DispatchQueue.global(qos: .utility).async {
-            let result = PrivilegedPowerSettings.setSleepDisabled(enabled)
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.isChangingSetting = false
-                switch result {
-                case .success:
-                    self.hasEnabledSleepPrevention = enabled
-                    self.defaults.set(enabled, forKey: Keys.hasEnabledSleepPrevention)
-                    self.isSleepPreventionActive = enabled
-                    self.scheduleReconcile()
-                case .failure(let error):
-                    self.lastError = error.message
-                }
+        let result = SleepAssertion.setActive(
+            enabled,
+            systemAssertionID: &systemSleepAssertionID,
+            displayAssertionID: &displaySleepAssertionID
+        )
+        isChangingSetting = false
+        switch result {
+        case .success:
+            isSleepPreventionActive = enabled
+            if enabled {
+                startClamshellHeartbeat()
+            } else {
+                clamshellHeartbeat?.cancel()
+                clamshellHeartbeat = nil
             }
+        case .failure(let error):
+            lastError = error.message
         }
+    }
+
+    private func startClamshellHeartbeat() {
+        clamshellHeartbeat?.cancel()
+        let heartbeat = DispatchSource.makeTimerSource(queue: .main)
+        heartbeat.schedule(deadline: .now() + 30, repeating: 30)
+        heartbeat.setEventHandler {
+            ClamshellSleepOverride.setDisabled(true)
+        }
+        heartbeat.resume()
+        clamshellHeartbeat = heartbeat
     }
 
     func retry() {
@@ -147,7 +149,6 @@ final class SleepController: ObservableObject {
 private enum Keys {
     static let mode = "mode"
     static let manualPreventSleep = "manualPreventSleep"
-    static let hasEnabledSleepPrevention = "hasEnabledSleepPrevention"
 }
 
 private func displayReconfigurationCallback(
@@ -162,15 +163,7 @@ private func displayReconfigurationCallback(
     }
 }
 
-private func powerSourceChangeCallback(_ userInfo: UnsafeMutableRawPointer?) {
-    guard let userInfo else { return }
-    let controller = Unmanaged<SleepController>.fromOpaque(userInfo).takeUnretainedValue()
-    DispatchQueue.main.async {
-        controller.refreshPowerSetting()
-    }
-}
-
-private enum PrivilegedPowerSettings {
+private enum SleepAssertion {
     enum CommandError: Error {
         case failed(String)
 
@@ -181,46 +174,85 @@ private enum PrivilegedPowerSettings {
         }
     }
 
-    static func setSleepDisabled(_ disabled: Bool) -> Result<Void, CommandError> {
-        let value = disabled ? "1" : "0"
-        let source = "do shell script \"/usr/bin/pmset -a disablesleep \(value)\" with administrator privileges"
-        var error: NSDictionary?
-        guard let script = NSAppleScript(source: source) else {
-            return .failure(.failed("Could not prepare the power-setting command."))
-        }
-        script.executeAndReturnError(&error)
+    static func setActive(
+        _ enabled: Bool,
+        systemAssertionID: inout IOPMAssertionID?,
+        displayAssertionID: inout IOPMAssertionID?
+    ) -> Result<Void, CommandError> {
+        if enabled {
+            guard systemAssertionID == nil, displayAssertionID == nil else { return .success(()) }
 
-        if let error {
-            let description = error[NSAppleScript.errorMessage] as? String ?? "macOS could not update the power setting."
-            return .failure(.failed(description))
-        }
+            var newSystemAssertionID: IOPMAssertionID = IOPMAssertionID(kIOPMNullAssertionID)
+            let systemStatus = IOPMAssertionCreateWithName(
+                NSString(string: kIOPMAssertionTypePreventUserIdleSystemSleep) as CFString,
+                IOPMAssertionLevel(kIOPMAssertionLevelOn),
+                NSString(string: "MacOnCall") as CFString,
+                &newSystemAssertionID
+            )
+            guard systemStatus == kIOReturnSuccess else {
+                return .failure(.failed("macOS could not create a sleep-prevention assertion (error \(systemStatus))."))
+            }
 
-        guard currentSleepDisabled() == disabled else {
-            return .failure(.failed("macOS did not apply the requested sleep setting."))
+            var newDisplayAssertionID: IOPMAssertionID = IOPMAssertionID(kIOPMNullAssertionID)
+            let displayStatus = IOPMAssertionCreateWithName(
+                NSString(string: kIOPMAssertionTypePreventUserIdleDisplaySleep) as CFString,
+                IOPMAssertionLevel(kIOPMAssertionLevelOn),
+                NSString(string: "MacOnCall") as CFString,
+                &newDisplayAssertionID
+            )
+            guard displayStatus == kIOReturnSuccess else {
+                IOPMAssertionRelease(newSystemAssertionID)
+                return .failure(.failed("macOS could not create a display-sleep assertion (error \(displayStatus))."))
+            }
+
+            systemAssertionID = newSystemAssertionID
+            displayAssertionID = newDisplayAssertionID
+            guard ClamshellSleepOverride.setDisabled(true) else {
+                IOPMAssertionRelease(newSystemAssertionID)
+                IOPMAssertionRelease(newDisplayAssertionID)
+                systemAssertionID = nil
+                displayAssertionID = nil
+                return .failure(.failed("macOS could not enable clamshell mode."))
+            }
+        } else {
+            ClamshellSleepOverride.setDisabled(false)
+            if let existingSystemAssertionID = systemAssertionID {
+                IOPMAssertionRelease(existingSystemAssertionID)
+                systemAssertionID = nil
+            }
+            if let existingDisplayAssertionID = displayAssertionID {
+                IOPMAssertionRelease(existingDisplayAssertionID)
+                displayAssertionID = nil
+            }
         }
         return .success(())
     }
+}
 
-    static func currentSleepDisabled() -> Bool? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
-        process.arguments = ["-g"]
-        let output = Pipe()
-        process.standardOutput = output
+private enum ClamshellSleepOverride {
+    // kPMSetClamshellSleepState is a private IOKit user-client selector used by
+    // macOS power-management utilities. It is not exposed by the public SDK.
+    private static let setClamshellSleepStateSelector: UInt32 = 12
 
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
+    static func setDisabled(_ disabled: Bool) -> Bool {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard service != IO_OBJECT_NULL else { return false }
+        defer { IOObjectRelease(service) }
+
+        var connection: io_connect_t = IO_OBJECT_NULL
+        guard IOServiceOpen(service, mach_task_self_, 0, &connection) == KERN_SUCCESS else {
+            return false
         }
+        defer { IOServiceClose(connection) }
 
-        guard process.terminationStatus == 0,
-              let text = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
-        else {
-            return nil
-        }
-
-        return text.range(of: #"(?m)^\s*SleepDisabled\s+1\s*$"#, options: .regularExpression) != nil
+        var input: UInt64 = disabled ? 1 : 0
+        return IOConnectCallScalarMethod(
+            connection,
+            setClamshellSleepStateSelector,
+            &input,
+            1,
+            nil,
+            nil
+        ) == KERN_SUCCESS
     }
 }
