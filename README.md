@@ -4,6 +4,8 @@ MacOnCall is a menu-bar-only macOS utility for keeping a Mac awake while you are
 
 ## Status
 
+> FYI: I don't know Swift and Mac development, but I kinda know how to code. PRs to improve are definitely welcome!
+
 This app was vibe coded and is currently untested in real-world use. In particular, power-source transitions, display hot-plugging, authorization behavior, sleep/wake behavior, and different macOS hardware configurations still need to be tested. Use it at your own risk and verify the live setting yourself.
 
 ## Requirements
