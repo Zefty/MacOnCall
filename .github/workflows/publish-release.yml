@@ -1,0 +1,54 @@
+name: Publish release DMG
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish DMG
+    runs-on: macos-14
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Show build environment
+        run: xcodebuild -version
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Build release app
+        run: |
+          xcodebuild \
+            -project MacOnCall.xcodeproj \
+            -scheme MacOnCall \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Create DMG
+        run: ./scripts/make-dmg.sh
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: MacOnCall build ${{ github.run_number }}
+          body: |
+            Automated release from commit ${{ github.sha }}.
+
+            This build is unsigned and has not been tested in real-world use.
+          files: MacOnCall.dmg
+          generate_release_notes: true
