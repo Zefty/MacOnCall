@@ -2,6 +2,16 @@
 
 MacOnCall is a menu-bar-only macOS utility for keeping a Mac awake while you are on call. It uses the system-wide `pmset disablesleep` setting and asks for administrator authentication when that setting needs to change.
 
+<table>
+  <tr>
+    <td><img src="docs/automatic.png" alt="MacOnCall Automatic mode" width="320"></td>
+    <td><img src="docs/manual.png" alt="MacOnCall Manual mode" width="320"></td>
+  </tr>
+</table>
+
+> [!WARNING]
+> MacOnCall does not currently install a privileged helper or daemon to watch and update the setting in the background. Each change invokes the administrator-authorized `pmset` command, so macOS may ask for your password repeatedly, particularly after its authorization cache expires or when the setting is reapplied after a power-source change.
+
 ## Status
 
 > FYI: I don't know Swift and Mac development, but I would think I kinda know how to code :)
