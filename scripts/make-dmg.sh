@@ -24,8 +24,11 @@ fi
 
 ditto "$APP_PATH" "$STAGING_DIR/MacOnCall.app"
 
+# Older create-dmg versions do not support --overwrite. Remove only the
+# generated output so the script works consistently across environments.
+rm -f "$DMG_PATH"
+
 create-dmg \
-    --overwrite \
     --volname "MacOnCall" \
     --window-pos 200 120 \
     --window-size 650 400 \

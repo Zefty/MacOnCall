@@ -4,7 +4,9 @@ MacOnCall is a menu-bar-only macOS utility for keeping a Mac awake while you are
 
 ## Status
 
-> FYI: I don't know Swift and Mac development, but I kinda know how to code. PRs to improve are definitely welcome!
+> FYI: I don't know Swift and Mac development, but I would think I kinda know how to code :)
+>
+> PRs to improve are definitely welcome!
 
 This app was vibe coded and is currently untested in real-world use. In particular, power-source transitions, display hot-plugging, authorization behavior, sleep/wake behavior, and different macOS hardware configurations still need to be tested. Use it at your own risk and verify the live setting yourself.
 
@@ -70,9 +72,7 @@ brew install create-dmg
 Build a release app into the repository's `build` directory:
 
 ```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-xcodebuild -project MacOnCall.xcodeproj -scheme MacOnCall -configuration Release \
-  -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+./scripts/build.sh
 ```
 
 Then create the DMG:

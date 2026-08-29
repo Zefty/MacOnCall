@@ -21,22 +21,11 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Show build environment
-        run: xcodebuild -version
-
       - name: Install create-dmg
         run: brew install create-dmg
 
       - name: Build release app
-        run: |
-          xcodebuild \
-            -project MacOnCall.xcodeproj \
-            -scheme MacOnCall \
-            -configuration Release \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            build
+        run: ./scripts/build.sh
 
       - name: Create DMG
         run: ./scripts/make-dmg.sh
