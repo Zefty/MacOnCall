@@ -2,6 +2,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 import IOKit.pwr_mgt
+import IOKit.ps
 
 @MainActor
 final class SleepController: ObservableObject {
@@ -34,7 +35,10 @@ final class SleepController: ObservableObject {
     private var systemSleepAssertionID: IOPMAssertionID?
     private var displaySleepAssertionID: IOPMAssertionID?
     private var reconciliationScheduled = false
+    private var shouldRebuildActiveSession = false
     private var clamshellHeartbeat: DispatchSourceTimer?
+    private var powerSourceRunLoopSource: CFRunLoopSource?
+    private var wakeObserver: NSObjectProtocol?
 
     var isPreventingSleep: Bool { isSleepPreventionActive }
     var iconName: String { isPreventingSleep ? "cup.and.saucer.fill" : "moon.zzz" }
@@ -51,11 +55,33 @@ final class SleepController: ObservableObject {
 
         refreshExternalDisplayCount()
         CGDisplayRegisterReconfigurationCallback(displayReconfigurationCallback, Unmanaged.passUnretained(self).toOpaque())
+        powerSourceRunLoopSource = IOPSCreateLimitedPowerNotification(
+            powerSourceChangeCallback,
+            Unmanaged.passUnretained(self).toOpaque()
+        )?.takeRetainedValue()
+        if let powerSourceRunLoopSource {
+            CFRunLoopAddSource(CFRunLoopGetMain(), powerSourceRunLoopSource, .defaultMode)
+        }
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshAfterSystemTransition()
+            }
+        }
         scheduleReconcile()
     }
 
     deinit {
         CGDisplayRemoveReconfigurationCallback(displayReconfigurationCallback, Unmanaged.passUnretained(self).toOpaque())
+        if let powerSourceRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), powerSourceRunLoopSource, .defaultMode)
+        }
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+        }
         if let systemSleepAssertionID {
             IOPMAssertionRelease(systemSleepAssertionID)
         }
@@ -75,20 +101,30 @@ final class SleepController: ObservableObject {
         scheduleReconcile()
     }
 
+    fileprivate func refreshAfterSystemTransition() {
+        refreshExternalDisplayCount()
+        scheduleReconcile(rebuildActiveSession: true)
+    }
+
     /// SwiftUI can call binding setters while it is rendering. Deferring this
     /// work prevents the resulting @Published changes from occurring in that
     /// same view-update transaction.
-    private func scheduleReconcile() {
+    private func scheduleReconcile(rebuildActiveSession: Bool = false) {
+        if rebuildActiveSession {
+            shouldRebuildActiveSession = true
+        }
         guard !reconciliationScheduled else { return }
         reconciliationScheduled = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.reconciliationScheduled = false
-            self.reconcile()
+            let rebuildActiveSession = self.shouldRebuildActiveSession
+            self.shouldRebuildActiveSession = false
+            self.reconcile(rebuildActiveSession: rebuildActiveSession)
         }
     }
 
-    private func reconcile() {
+    private func reconcile(rebuildActiveSession: Bool = false) {
         guard !isChangingSetting else { return }
 
         let shouldPreventSleep = mode == .automatic
@@ -96,6 +132,9 @@ final class SleepController: ObservableObject {
             : manualPreventSleep
 
         if shouldPreventSleep {
+            if rebuildActiveSession, isSleepPreventionActive {
+                setSleepPrevention(false)
+            }
             guard !isSleepPreventionActive else { return }
             setSleepPrevention(true)
         } else if isSleepPreventionActive {
@@ -160,6 +199,14 @@ private func displayReconfigurationCallback(
     let controller = Unmanaged<SleepController>.fromOpaque(userInfo).takeUnretainedValue()
     DispatchQueue.main.async {
         controller.refreshExternalDisplayCount()
+    }
+}
+
+private func powerSourceChangeCallback(_ userInfo: UnsafeMutableRawPointer?) {
+    guard let userInfo else { return }
+    let controller = Unmanaged<SleepController>.fromOpaque(userInfo).takeUnretainedValue()
+    DispatchQueue.main.async {
+        controller.refreshAfterSystemTransition()
     }
 }
 
