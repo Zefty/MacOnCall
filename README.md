@@ -38,22 +38,22 @@ Automatic mode is the default. Sleep prevention is enabled whenever the number o
 
 ### Manual
 
-In Manual mode, the **Prevent Sleep** toggle directly controls sleep prevention.
+In Manual mode, choose a 1, 2, 3, 5, or 8-hour session, enter a custom number of hours, or enable **Indefinite**. Timed sessions show the remaining time and turn sleep prevention off automatically when they expire.
 
 ## Power-source changes
 
-The power assertions belong to the running MacOnCall process. MacOnCall also reapplies the clamshell override periodically because macOS can clear that state during power transitions. The app still updates its selected mode based on external-display changes.
+The power assertions belong to the running MacOnCall process. MacOnCall listens for power-source, wake, display, and clamshell state changes and restores the active session when macOS clears its runtime state.
 
 ## Safety and persistence
 
-- The selected mode and Manual toggle are saved between launches.
+- The selected mode, indefinite setting, and active timed-session deadline are saved between launches.
 - The assertion is released when sleep prevention is disabled or when MacOnCall quits.
 - No administrator password is required.
 - Closing the lid turns off the built-in display as required by clamshell mode; MacOnCall cannot keep that panel lit. An attached external display should remain awake while prevention is active.
 - Selecting Sleep manually or other forced-sleep events may still sleep the Mac.
 
 > [!WARNING]
-> Clamshell support uses an undocumented IOKit power-management selector because macOS does not provide a public API for overriding lid-close sleep. It is deliberately reapplied while MacOnCall is running and may vary across macOS versions and hardware.
+> Clamshell support uses an undocumented IOKit power-management selector because macOS does not provide a public API for overriding lid-close sleep. MacOnCall reapplies it in response to system events, but its behavior may vary across macOS versions and hardware.
 
 > [!WARNING]
 > This app was vibe coded and remains untested in real-world use. Do not rely on it for unattended work until you have verified its behavior on your own Mac.

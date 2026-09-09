@@ -20,12 +20,14 @@ final class SleepController: ObservableObject {
             scheduleReconcile()
         }
     }
-    @Published var manualPreventSleep: Bool {
+    @Published private(set) var manualPreventSleep: Bool {
         didSet {
             defaults.set(manualPreventSleep, forKey: Keys.manualPreventSleep)
             scheduleReconcile()
         }
     }
+    @Published private(set) var manualSessionEndDate: Date?
+    @Published private(set) var manualTimeRemaining: TimeInterval?
     @Published private(set) var externalDisplayCount = 0
     @Published private(set) var isSleepPreventionActive: Bool
     @Published private(set) var isChangingSetting = false
@@ -36,11 +38,36 @@ final class SleepController: ObservableObject {
     private var displaySleepAssertionID: IOPMAssertionID?
     private var reconciliationScheduled = false
     private var shouldRebuildActiveSession = false
-    private var clamshellHeartbeat: DispatchSourceTimer?
+    private var manualSessionTimer: DispatchSourceTimer?
     private var powerSourceRunLoopSource: CFRunLoopSource?
     private var wakeObserver: NSObjectProtocol?
+    private var clamshellNotificationPort: IONotificationPortRef?
+    private var clamshellNotification = io_object_t(IO_OBJECT_NULL)
+
+    static let manualDurationPresets = [1, 2, 3, 5, 8]
 
     var isPreventingSleep: Bool { isSleepPreventionActive }
+    var isIndefiniteManualSession: Bool { manualPreventSleep && manualSessionEndDate == nil }
+    var isTimedManualSession: Bool { manualPreventSleep && manualSessionEndDate != nil }
+    var manualSessionStatusText: String? {
+        guard manualPreventSleep else { return nil }
+        guard let manualSessionEndDate, let manualTimeRemaining else {
+            return "Active indefinitely"
+        }
+
+        let totalMinutes = max(1, Int(ceil(manualTimeRemaining / 60)))
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+        let remaining = if hours > 0, minutes > 0 {
+            "\(hours)h \(minutes)m remaining"
+        } else if hours > 0 {
+            "\(hours)h remaining"
+        } else {
+            "\(minutes)m remaining"
+        }
+        let endTime = manualSessionEndDate.formatted(date: .omitted, time: .shortened)
+        return "\(remaining) · until \(endTime)"
+    }
     var iconName: String { isPreventingSleep ? "cup.and.saucer.fill" : "moon.zzz" }
     var statusText: String {
         if isChangingSetting { return "Updating power setting…" }
@@ -49,9 +76,20 @@ final class SleepController: ObservableObject {
 
     init() {
         let storedMode = defaults.string(forKey: Keys.mode).flatMap(Mode.init(rawValue:)) ?? .automatic
+        let storedManualPreventSleep = defaults.bool(forKey: Keys.manualPreventSleep)
+        let storedEndTimestamp = defaults.object(forKey: Keys.manualSessionEndDate) as? TimeInterval
+        let storedEndDate = storedEndTimestamp.map(Date.init(timeIntervalSince1970:))
+        let activeEndDate = storedEndDate.flatMap { $0 > Date() ? $0 : nil }
         mode = storedMode
-        manualPreventSleep = defaults.bool(forKey: Keys.manualPreventSleep)
+        manualPreventSleep = storedManualPreventSleep && (storedEndDate == nil || activeEndDate != nil)
+        manualSessionEndDate = activeEndDate
+        manualTimeRemaining = activeEndDate?.timeIntervalSinceNow
         isSleepPreventionActive = false
+
+        if storedEndDate != nil, activeEndDate == nil {
+            defaults.set(false, forKey: Keys.manualPreventSleep)
+            defaults.removeObject(forKey: Keys.manualSessionEndDate)
+        }
 
         refreshExternalDisplayCount()
         CGDisplayRegisterReconfigurationCallback(displayReconfigurationCallback, Unmanaged.passUnretained(self).toOpaque())
@@ -71,6 +109,8 @@ final class SleepController: ObservableObject {
                 self?.refreshAfterSystemTransition()
             }
         }
+        registerForClamshellChanges()
+        startManualSessionTimerIfNeeded()
         scheduleReconcile()
     }
 
@@ -82,14 +122,21 @@ final class SleepController: ObservableObject {
         if let wakeObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
         }
+        if clamshellNotification != IO_OBJECT_NULL {
+            IOObjectRelease(clamshellNotification)
+        }
+        if let clamshellNotificationPort {
+            IONotificationPortSetDispatchQueue(clamshellNotificationPort, nil)
+            IONotificationPortDestroy(clamshellNotificationPort)
+        }
         if let systemSleepAssertionID {
             IOPMAssertionRelease(systemSleepAssertionID)
         }
         if let displaySleepAssertionID {
             IOPMAssertionRelease(displaySleepAssertionID)
         }
-        clamshellHeartbeat?.cancel()
-        ClamshellSleepOverride.setDisabled(false)
+        manualSessionTimer?.cancel()
+        _ = ClamshellSleepOverride.setDisabled(false)
     }
 
     func refreshExternalDisplayCount() {
@@ -102,8 +149,40 @@ final class SleepController: ObservableObject {
     }
 
     fileprivate func refreshAfterSystemTransition() {
+        expireManualSessionIfNeeded()
         refreshExternalDisplayCount()
         scheduleReconcile(rebuildActiveSession: true)
+    }
+
+    fileprivate func handleClamshellStateChange(causesSleep: Bool) {
+        guard causesSleep, isSleepPreventionActive else { return }
+        if !ClamshellSleepOverride.setDisabled(true) {
+            lastError = "macOS could not restore clamshell mode."
+        }
+    }
+
+    func startManualSession(hours: Int) {
+        guard hours > 0 else { return }
+        let endDate = Date().addingTimeInterval(TimeInterval(hours) * 60 * 60)
+        manualSessionEndDate = endDate
+        manualTimeRemaining = endDate.timeIntervalSinceNow
+        defaults.set(endDate.timeIntervalSince1970, forKey: Keys.manualSessionEndDate)
+        manualPreventSleep = true
+        startManualSessionTimerIfNeeded()
+    }
+
+    func setIndefiniteManualSession(_ enabled: Bool) {
+        clearManualSessionDeadline()
+        manualPreventSleep = enabled
+    }
+
+    func stopManualSession() {
+        clearManualSessionDeadline()
+        manualPreventSleep = false
+    }
+
+    func refreshManualSessionCountdown() {
+        expireManualSessionIfNeeded()
     }
 
     /// SwiftUI can call binding setters while it is rendering. Deferring this
@@ -155,26 +234,74 @@ final class SleepController: ObservableObject {
         switch result {
         case .success:
             isSleepPreventionActive = enabled
-            if enabled {
-                startClamshellHeartbeat()
-            } else {
-                clamshellHeartbeat?.cancel()
-                clamshellHeartbeat = nil
-            }
         case .failure(let error):
             lastError = error.message
         }
     }
 
-    private func startClamshellHeartbeat() {
-        clamshellHeartbeat?.cancel()
-        let heartbeat = DispatchSource.makeTimerSource(queue: .main)
-        heartbeat.schedule(deadline: .now() + 30, repeating: 30)
-        heartbeat.setEventHandler {
-            ClamshellSleepOverride.setDisabled(true)
+    private func registerForClamshellChanges() {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard service != IO_OBJECT_NULL else { return }
+        defer { IOObjectRelease(service) }
+
+        guard let notificationPort = IONotificationPortCreate(kIOMainPortDefault) else { return }
+        IONotificationPortSetDispatchQueue(notificationPort, DispatchQueue.main)
+
+        var notification = io_object_t(IO_OBJECT_NULL)
+        let status = IOServiceAddInterestNotification(
+            notificationPort,
+            service,
+            kIOGeneralInterest,
+            clamshellStateChangeCallback,
+            Unmanaged.passUnretained(self).toOpaque(),
+            &notification
+        )
+        guard status == KERN_SUCCESS else {
+            IONotificationPortSetDispatchQueue(notificationPort, nil)
+            IONotificationPortDestroy(notificationPort)
+            return
         }
-        heartbeat.resume()
-        clamshellHeartbeat = heartbeat
+
+        clamshellNotificationPort = notificationPort
+        clamshellNotification = notification
+    }
+
+    private func startManualSessionTimerIfNeeded() {
+        manualSessionTimer?.cancel()
+        manualSessionTimer = nil
+        guard let manualSessionEndDate else { return }
+
+        let remaining = manualSessionEndDate.timeIntervalSinceNow
+        guard remaining > 0 else {
+            stopManualSession()
+            return
+        }
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + remaining, leeway: .seconds(1))
+        timer.setEventHandler { [weak self] in
+            self?.expireManualSessionIfNeeded()
+        }
+        timer.resume()
+        manualSessionTimer = timer
+    }
+
+    private func expireManualSessionIfNeeded() {
+        guard let manualSessionEndDate else { return }
+        let remaining = manualSessionEndDate.timeIntervalSinceNow
+        guard remaining <= 0 else {
+            manualTimeRemaining = remaining
+            return
+        }
+        stopManualSession()
+    }
+
+    private func clearManualSessionDeadline() {
+        manualSessionTimer?.cancel()
+        manualSessionTimer = nil
+        manualSessionEndDate = nil
+        manualTimeRemaining = nil
+        defaults.removeObject(forKey: Keys.manualSessionEndDate)
     }
 
     func retry() {
@@ -188,6 +315,7 @@ final class SleepController: ObservableObject {
 private enum Keys {
     static let mode = "mode"
     static let manualPreventSleep = "manualPreventSleep"
+    static let manualSessionEndDate = "manualSessionEndDate"
 }
 
 private func displayReconfigurationCallback(
@@ -209,6 +337,25 @@ private func powerSourceChangeCallback(_ userInfo: UnsafeMutableRawPointer?) {
         controller.refreshAfterSystemTransition()
     }
 }
+
+private func clamshellStateChangeCallback(
+    _ userInfo: UnsafeMutableRawPointer?,
+    _ service: io_service_t,
+    _ messageType: natural_t,
+    _ messageArgument: UnsafeMutableRawPointer?
+) {
+    guard messageType == clamshellStateChangeMessage, let userInfo else { return }
+    let state = UInt(bitPattern: messageArgument)
+    let causesSleep = state & UInt(kClamshellSleepBit) != 0
+    let controller = Unmanaged<SleepController>.fromOpaque(userInfo).takeUnretainedValue()
+    DispatchQueue.main.async {
+        controller.handleClamshellStateChange(causesSleep: causesSleep)
+    }
+}
+
+// Swift does not import the nested C macros used to define
+// kIOPMMessageClamshellStateChange: iokit_family_msg(13, 0x100).
+private let clamshellStateChangeMessage = natural_t(0xE003_4100)
 
 private enum SleepAssertion {
     enum CommandError: Error {
@@ -262,7 +409,7 @@ private enum SleepAssertion {
                 return .failure(.failed("macOS could not enable clamshell mode."))
             }
         } else {
-            ClamshellSleepOverride.setDisabled(false)
+            _ = ClamshellSleepOverride.setDisabled(false)
             if let existingSystemAssertionID = systemAssertionID {
                 IOPMAssertionRelease(existingSystemAssertionID)
                 systemAssertionID = nil

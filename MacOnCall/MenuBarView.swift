@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MenuBarView: View {
     @ObservedObject var controller: SleepController
+    @State private var customHours = "4"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -31,8 +32,7 @@ struct MenuBarView: View {
                         .foregroundStyle(.secondary)
                 }
             } else {
-                Toggle("Prevent Sleep", isOn: manualPreventSleepBinding)
-                    .disabled(controller.isChangingSetting)
+                manualControls
             }
 
             if let error = controller.lastError {
@@ -70,14 +70,82 @@ struct MenuBarView: View {
         )
     }
 
-    private var manualPreventSleepBinding: Binding<Bool> {
+    private var indefiniteBinding: Binding<Bool> {
         Binding(
-            get: { controller.manualPreventSleep },
+            get: { controller.isIndefiniteManualSession },
             set: { value in
                 DispatchQueue.main.async {
-                    controller.manualPreventSleep = value
+                    controller.setIndefiniteManualSession(value)
                 }
             }
         )
+    }
+
+    private var parsedCustomHours: Int? {
+        guard let hours = Int(customHours), (1...999).contains(hours) else { return nil }
+        return hours
+    }
+
+    private var manualControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Keep awake for")
+                .font(.subheadline.weight(.medium))
+
+            HStack(spacing: 6) {
+                ForEach(SleepController.manualDurationPresets, id: \.self) { hours in
+                    Button("\(hours)H") {
+                        controller.startManualSession(hours: hours)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(controller.isChangingSetting)
+                }
+            }
+
+            HStack(spacing: 8) {
+                TextField("Hours", text: $customHours)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 64)
+                Text("hours")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Start") {
+                    guard let hours = parsedCustomHours else { return }
+                    controller.startManualSession(hours: hours)
+                }
+                .disabled(parsedCustomHours == nil || controller.isChangingSetting)
+            }
+
+            Toggle("Indefinite", isOn: indefiniteBinding)
+                .disabled(controller.isChangingSetting)
+
+            if let status = controller.manualSessionStatusText {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if controller.isTimedManualSession {
+                        Button("Stop") {
+                            controller.stopManualSession()
+                        }
+                        .font(.caption)
+                        .disabled(controller.isChangingSetting)
+                    }
+                }
+            }
+        }
+        .task(id: controller.isTimedManualSession) {
+            controller.refreshManualSessionCountdown()
+            guard controller.isTimedManualSession else { return }
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(60))
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
+                controller.refreshManualSessionCountdown()
+            }
+        }
     }
 }
