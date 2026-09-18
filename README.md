@@ -22,9 +22,13 @@ This app was vibe coded and is currently untested in real-world use. In particul
 - macOS 14 or later
 - Xcode, to build the project
 
+## Landing page
+
+The static website lives in [`src/Web`](src/Web). See its [README](src/Web/README.md) for local development and hosting instructions.
+
 ## Run from Xcode
 
-1. Open `MacOnCall.xcodeproj` in Xcode.
+1. Open `src/MacOnCall/MacOnCall.xcodeproj` in Xcode.
 2. Select the **MacOnCall** scheme and **My Mac** as the run destination.
 3. Build and run.
 

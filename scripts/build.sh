@@ -11,7 +11,7 @@ if [[ -z "${DEVELOPER_DIR:-}" && -d "/Applications/Xcode.app/Contents/Developer"
 fi
 
 xcodebuild \
-    -project "$PROJECT_ROOT/MacOnCall.xcodeproj" \
+    -project "$PROJECT_ROOT/src/MacOnCall/MacOnCall.xcodeproj" \
     -scheme MacOnCall \
     -configuration Release \
     -derivedDataPath "$PROJECT_ROOT/build" \

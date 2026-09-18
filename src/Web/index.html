@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#080a0d" />
+    <title>MacOnCall | Keep your Mac awake. Keep your settings.</title>
+    <meta name="description" content="A small macOS menu bar app that keeps your Mac awake, remembers your settings, and restores sleep prevention after power changes. Download MacOnCall on GitHub." />
+    <meta property="og:title" content="MacOnCall | On call? Stay on." />
+    <meta property="og:description" content="Keep your Mac awake, with settings that stay put through power changes and wake. A simple macOS menu bar utility." />
+    <meta property="og:type" content="website" />
+    <link rel="icon" type="image/png" href="./assets/app-icon.png" />
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./main.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header page-width">
+      <a class="brand" href="./" aria-label="MacOnCall home">
+        <img src="./assets/app-icon.png" width="34" height="34" alt="" />
+        <span>MacOnCall</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <a class="header-download" href="https://github.com/Zefty/MacOnCall/releases/latest">Download</a>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">For when it can't sleep</p>
+          <h1 id="hero-title">On call?<br />Stay on.</h1>
+          <p class="hero-description">A lightweight macOS menu bar app to keep your Mac awake through long calls, late nights, and power changes.</p>
+          <div class="hero-actions">
+            <a class="download-button" href="https://github.com/Zefty/MacOnCall/releases/latest">Download for macOS</a>
+            <a class="secondary-button" href="https://github.com/Zefty/MacOnCall">View on GitHub <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+
+        <div class="device-stage page-width">
+          <div class="device-glow" aria-hidden="true"></div>
+          <div class="mac-display">
+            <div class="mac-screen">
+              <div class="mac-menubar" aria-hidden="true">
+                <span class="menu-left">Finder <span>File</span> <span>Edit</span> <span>View</span></span>
+                <div class="mac-notch"></div>
+                <div class="menu-right"><span class="active-menu-icon" data-icon="monitor"></span><span data-icon="wifi"></span><span data-icon="search"></span><span data-icon="battery"></span><span class="menu-date">Fri 18 Sep&nbsp; 10:24</span></div>
+              </div>
+              <div class="desktop-preview" role="img" aria-label="Illustration of MacOnCall open in the Mac menu bar. Automatic mode is enabled, with one external display connected and sleep prevention active.">
+                <div class="app-popover" aria-hidden="true">
+                  <div class="popover-heading"><img src="./assets/app-icon.png" width="27" height="27" alt="" /><strong>MacOnCall</strong></div>
+                  <p class="app-status">Sleep prevention is active</p>
+                  <div class="popover-divider"></div>
+                  <div class="preview-mode"><span>Mode</span><div><span class="selected">Automatic</span><span>Manual</span></div></div>
+                  <p class="display-label"><span data-icon="monitor"></span>Enable with any external display</p>
+                  <p class="display-count">1 external display connected</p>
+                  <div class="popover-divider"></div>
+                  <span class="preview-quit">Quit MacOnCall</span>
+                </div>
+              </div>
+              <div class="hero-features" id="features" aria-label="MacOnCall features">
+                <article><span data-icon="lightning" aria-hidden="true"></span><h2>Stay awake.</h2><p>Prevent idle system <br />and display sleep.</p></article>
+                <article><span data-icon="gear" aria-hidden="true"></span><h2>Keep your settings.</h2><p>Automatic recovery <br />when power changes.</p></article>
+                <article><span data-icon="shield" aria-hidden="true"></span><h2>Small. Native. Yours.</h2><p>No account needed. <br />Source on GitHub.</p></article>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="how-it-works page-width" aria-labelledby="how-title" data-reveal>
+        <div class="section-intro" id="how-it-works">
+          <p class="section-label">Two ways to stay awake</p>
+          <h2 id="how-title">Choose the trigger.<br /><span>MacOnCall handles the rest.</span></h2>
+          <p>Connect a display for hands-off protection, or choose exactly how long your Mac should stay awake.</p>
+        </div>
+        <div class="mode-tabs" hidden>
+          <button type="button" id="tab-automatic" aria-controls="panel-automatic">Automatic <span>Connect a display</span></button>
+          <button type="button" id="tab-manual" aria-controls="panel-manual">Manual <span>Choose a duration</span></button>
+        </div>
+        <div class="mode-panels">
+          <section id="panel-automatic" class="mode-panel" aria-labelledby="automatic-heading">
+            <div class="workflow-layout">
+              <div class="workflow-demo automatic-demo" aria-hidden="true">
+                <div class="demo-menubar"><span data-icon="monitor"></span><i></i><i></i><i></i></div>
+                <div class="desk-scene">
+                  <div class="demo-mac"><span data-icon="apple"></span></div>
+                  <div class="display-cable"></div>
+                  <div class="demo-monitor"><span>Connected</span></div>
+                </div>
+                <div class="demo-status"><span class="status-dot"></span><div><strong>Sleep prevention active</strong><small>External display connected</small></div></div>
+              </div>
+              <div class="workflow-copy">
+                <h3 class="mode-heading" id="automatic-heading">Automatic mode</h3>
+                <ol class="vertical-timeline">
+                  <li><span class="timeline-marker">1</span><div><h4>Leave it in Automatic</h4><p>MacOnCall watches for an external display in the background.</p></div></li>
+                  <li><span class="timeline-marker">2</span><div><h4>Connect your display</h4><p>The moment it appears, sleep prevention switches on.</p></div></li>
+                  <li><span class="timeline-marker">✓</span><div><h4>Disconnect when finished</h4><p>Normal sleep behaviour returns when the last display is removed.</p></div></li>
+                </ol>
+              </div>
+            </div>
+          </section>
+          <section id="panel-manual" class="mode-panel" aria-labelledby="manual-heading">
+            <div class="workflow-layout">
+              <div class="workflow-demo manual-demo" aria-hidden="true">
+                <div class="timer-window">
+                  <div class="timer-heading"><span>Stay awake for</span><span class="timer-live-dot"></span></div>
+                  <div class="duration-options"><span>1 hr</span><span>3 hrs</span><span>5 hrs</span><span>8 hrs</span></div>
+                  <div class="timer-readout"><strong>03:00:00</strong><small>remaining</small></div>
+                </div>
+                <div class="demo-status"><span class="status-dot"></span><div><strong>Timer is running</strong><small>Your deadline is saved</small></div></div>
+              </div>
+              <div class="workflow-copy">
+                <h3 class="mode-heading" id="manual-heading">Manual mode</h3>
+                <ol class="vertical-timeline">
+                  <li><span class="timeline-marker">1</span><div><h4>Switch to Manual</h4><p>Use it anywhere, with or without an external display.</p></div></li>
+                  <li><span class="timeline-marker">2</span><div><h4>Pick a duration</h4><p>Choose a preset, enter a custom time, or keep it on indefinitely.</p></div></li>
+                  <li><span class="timeline-marker">✓</span><div><h4>Let the timer finish</h4><p>MacOnCall stops automatically, even if the app was relaunched.</p></div></li>
+                </ol>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="persistence page-width" aria-labelledby="persistence-title" data-reveal>
+        <div class="persistence-copy">
+          <h2 id="persistence-title">Power changes.<br /><span>Your settings stay.</span></h2>
+          <p>Tired of toggling your sleep utility back on after you unplug? MacOnCall saves your choice and restores active sleep prevention after power changes and wake.</p>
+        </div>
+        <ol class="recovery-flow" aria-label="How power recovery works">
+          <li><span class="flow-marker" aria-hidden="true"></span><div><h3>You unplug or wake your Mac</h3><p>MacOnCall notices the system change.</p></div></li>
+          <li><span class="flow-marker" aria-hidden="true"></span><div><h3>Your active session is restored</h3><p>Sleep prevention is reapplied automatically.</p></div></li>
+          <li><span class="flow-marker" aria-hidden="true">✓</span><div><h3>Your settings stay yours</h3><p>Same mode. Same timer. No extra toggling.</p></div></li>
+        </ol>
+      </section>
+      <section class="faq page-width" aria-labelledby="faq" data-reveal>
+        <h2 id="faq">A few things to know.</h2>
+        <div class="faq-items">
+          <details><summary>Will my settings reset when I unplug?<span aria-hidden="true">+</span></summary><p>MacOnCall saves your mode and session deadline. While the app is running, it listens for power changes and wake events, then reapplies sleep prevention if your session is still active.</p></details>
+          <details><summary>Does it work with the lid closed?<span aria-hidden="true">+</span></summary><p>MacOnCall attempts to prevent lid-close sleep, but support varies by Mac and macOS version. The built-in display still turns off when the lid is closed. Check the behaviour on your own Mac before relying on it.</p></details>
+          <details><summary>What do I need to run it?<span aria-hidden="true">+</span></summary><p>macOS 14 or later on Apple Silicon or Intel. Download the DMG from GitHub Releases and move MacOnCall to Applications. Current releases are unsigned. No account or administrator password is required for sleep prevention.</p></details>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer page-width">
+      <div class="footer-row">
+        <a class="brand footer-brand" href="./"><img src="./assets/app-icon.png" width="24" height="24" alt="" />MacOnCall</a>
+        <p>macOS 14+ · Apple Silicon &amp; Intel</p>
+        <div class="footer-links">
+          <a href="https://github.com/Zefty/MacOnCall#readme">App details</a>
+          <a href="https://github.com/Zefty/MacOnCall/issues">Report an issue <span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+      <p class="release-note">Early release, unsigned. Lid-closed behaviour varies by Mac and macOS version. <a href="https://github.com/Zefty/MacOnCall#safety-and-persistence">Read the limitations.</a></p>
+    </footer>
+  </body>
+</html>
