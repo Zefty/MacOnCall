@@ -24,16 +24,7 @@ struct MenuBarView: View {
             .pickerStyle(.segmented)
             .disabled(controller.isChangingSetting)
 
-            if controller.mode == .automatic {
-                VStack(alignment: .leading, spacing: 5) {
-                    Label("Enable with any external display", systemImage: "display.2")
-                    Text("\(controller.externalDisplayCount) \(controller.externalDisplayCount == 1 ? "external display" : "external displays") connected")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                manualControls
-            }
+            modeControls
 
             if let error = controller.lastError {
                 VStack(alignment: .leading, spacing: 6) {
@@ -84,6 +75,32 @@ struct MenuBarView: View {
     private var parsedCustomHours: Int? {
         guard let hours = Int(customHours), (1...999).contains(hours) else { return nil }
         return hours
+    }
+
+    private var modeControls: some View {
+        // Keep both panels in the layout so MenuBarExtra does not resize and
+        // lose its menu-bar anchor when switching between modes.
+        ZStack(alignment: .topLeading) {
+            automaticControls
+                .opacity(controller.mode == .automatic ? 1 : 0)
+                .allowsHitTesting(controller.mode == .automatic)
+                .accessibilityHidden(controller.mode != .automatic)
+
+            manualControls
+                .opacity(controller.mode == .manual ? 1 : 0)
+                .allowsHitTesting(controller.mode == .manual)
+                .disabled(controller.mode != .manual)
+                .accessibilityHidden(controller.mode != .manual)
+        }
+    }
+
+    private var automaticControls: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Label("Enable with any external display", systemImage: "display.2")
+            Text("\(controller.externalDisplayCount) \(controller.externalDisplayCount == 1 ? "external display" : "external displays") connected")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private var manualControls: some View {
