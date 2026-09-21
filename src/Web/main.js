@@ -1,3 +1,4 @@
+import { inject } from '@vercel/analytics';
 import monitor from '@phosphor-icons/core/assets/regular/monitor.svg?raw';
 import wifi from '@phosphor-icons/core/assets/regular/wifi-high.svg?raw';
 import search from '@phosphor-icons/core/assets/regular/magnifying-glass.svg?raw';
@@ -6,6 +7,8 @@ import lightning from '@phosphor-icons/core/assets/regular/lightning.svg?raw';
 import gear from '@phosphor-icons/core/assets/regular/gear.svg?raw';
 import shield from '@phosphor-icons/core/assets/regular/shield-check.svg?raw';
 import apple from '@phosphor-icons/core/assets/fill/apple-logo-fill.svg?raw';
+
+inject();
 
 const icons = { monitor, wifi, search, battery, lightning, gear, shield, apple };
 document.querySelectorAll('[data-icon]').forEach((element) => {
